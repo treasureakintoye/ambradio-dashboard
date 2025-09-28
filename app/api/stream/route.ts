@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { icecastConfig } from '@/lib/config/icecast'
 
+export const dynamic = 'force-dynamic';
+
 interface IcecastSource {
   mount: string
   listeners: number
