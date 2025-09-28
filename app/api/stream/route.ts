@@ -54,5 +54,4 @@ export async function GET() {
     console.error('Error fetching stream data:', error)
     return NextResponse.json({ error: 'Failed to fetch stream data' }, { status: 500 })
   }
-  }
 }
