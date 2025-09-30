@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+export const dynamic = 'force-dynamic';
+
 import { icecastConfig } from '@/lib/config/icecast'
 import { parseStringPromise } from 'xml2js'
 

@@ -1,0 +1,79 @@
+version: '3.0'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: radio_db
+      POSTGRES_USER: radio_user
+      POSTGRES_PASSWORD: ${DB_PASS:-radio_pass}  # Generated or from .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U radio_user -d radio_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  icecast:
+    image: moul/icecast  # Or custom Dockerfile for Icecast 2
+    environment:
+      ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:-radio_source_pass}
+      ICECAST_ADMIN_PASSWORD: ${ICECAST_ADMIN_PASSWORD:-admin}
+      ICECAST_ADMIN_USER: admin
+      ICECAST_HOSTNAME: 0.0.0.0
+      ICECAST_PORT: 8000  # Internal port, expose 8000
+    ports:
+      - "8000:8000"  # Stream port
+    volumes:
+      - icecast_logs:/var/log/icecast
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://radio_user:${DB_PASS:-radio_pass}@postgres:5432/radio_db
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=http://localhost:3000  # Update for domain
+      - ICECAST_HOSTNAME=icecast
+      - ICECAST_PORT=8000
+      - ICECAST_MOUNT_POINT=/stream
+      - ICECAST_PASSWORD=${ICECAST_SOURCE_PASSWORD:-radio_source_pass}
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules  # Avoid host node_modules
+      - media_files:/app/public/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      icecast:
+        condition: service_healthy
+    command: sh -c "
+      # Generate passwords if not set
+      [ -z '$DB_PASS' ] && export DB_PASS=$(openssl rand -hex 16)
+      [ -z '$ICECAST_SOURCE_PASSWORD' ] && export ICECAST_SOURCE_PASSWORD=$(openssl rand -hex 16)
+      [ -z '$ICECAST_ADMIN_PASSWORD' ] && export ICECAST_ADMIN_PASSWORD=$(openssl rand -hex 16)
+      [ -z '$NEXTAUTH_SECRET' ] && export NEXTAUTH_SECRET=$(openssl rand -hex 32)
+      
+      # Update configs (e.g., icecast.xml via volume or env)
+      echo 'Auto-generated passwords: DB_PASS=$DB_PASS, ICECAST_SOURCE_PASSWORD=$ICECAST_SOURCE_PASSWORD'
+      
+      npm run build
+      npm start
+      "
+
+volumes:
+  postgres_data:
+  icecast_logs:
+  media_files:

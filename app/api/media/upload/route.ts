@@ -1,7 +1,9 @@
-import { put } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
-import { createServerClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
+import { PrismaClient } from '@prisma/client'
+import fs from 'fs'
+import path from 'path'
+
+const prisma = new PrismaClient()
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,49 +25,48 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid file type. Only audio files are allowed." }, { status: 400 })
     }
 
-    // Upload to Vercel Blob
-    const blob = await put(`media/${stationId}/${Date.now()}-${file.name}`, file, {
-      access: "public",
-    })
+    // Save file locally
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+    const filename = Date.now() + '-' + file.name
+    const uploadDir = path.join(process.cwd(), 'public/media', stationId)
+    await fs.promises.mkdir(uploadDir, { recursive: true })
+    const filepath = path.join(uploadDir, filename)
+    await fs.promises.writeFile(filepath, buffer)
 
     // Extract metadata from file name
     const fileName = file.name
-    const nameWithoutExt = fileName.replace(/\.[^/.]+$/, "")
+    const nameWithoutExt = path.basename(fileName, path.extname(fileName))
     const parts = nameWithoutExt.split(" - ")
     const artist = parts.length > 1 ? parts[0] : "Unknown Artist"
     const title = parts.length > 1 ? parts.slice(1).join(" - ") : nameWithoutExt
 
-    // Save to database
-    const cookieStore = cookies()
-    const supabase = createServerClient(cookieStore)
-
-    const { data: mediaData, error } = await supabase
-      .from("media")
-      .insert({
-        station_id: stationId,
-        unique_id: `${stationId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    const media = await prisma.media.create({
+      data: {
+        stationId,
+        uniqueId: `${stationId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         title,
         artist,
-        path: blob.url,
-        length: 0, // Would be extracted from actual audio file metadata
-        is_visible: true,
-        is_playable: true,
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error("Database error:", error)
-      return NextResponse.json({ error: "Failed to save media record" }, { status: 500 })
-    }
+        path: `/media/${stationId}/${filename}`,
+        length: 0, // Could use music-metadata library to extract
+        isVisible: true,
+        isPlayable: true,
+      },
+      select: {
+        id: true,
+        title: true,
+        artist: true,
+        path: true,
+      }
+    })
 
     return NextResponse.json({
       success: true,
-      url: blob.url,
+      url: media.path,
       filename: file.name,
       size: file.size,
       type: file.type,
-      mediaId: mediaData.id,
+      mediaId: media.id,
     })
   } catch (error) {
     console.error("Upload error:", error)

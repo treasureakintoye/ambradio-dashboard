@@ -8,10 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
-import { AuthError } from '@supabase/supabase-js'
+import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-
 export default function Page() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -21,43 +20,35 @@ export default function Page() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
     setIsLoading(true)
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const result = await signIn("credentials", {
         email,
         password,
-        options: {
-          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/dashboard`,
-        },
+        redirect: false,
+        callbackUrl: `${window.location.origin}/dashboard`,
       })
-      if (error) throw error
-      router.push("/dashboard")
-    } catch (error: unknown) {
-      let errorMessage = "An error occurred"
-      if (error instanceof AuthError) {
-        switch (error.message) {
-          case "Invalid login credentials":
+
+      if (result?.error) {
+        let errorMessage = "An error occurred"
+        switch (result.error) {
+          case "CredentialsSignin":
             errorMessage = "Invalid email or password. Please try again."
-            break
-          case "Email not confirmed":
-            errorMessage = "Please check your email to confirm your account before signing in."
             break
           case "Too many requests":
             errorMessage = "Too many failed attempts. Please try again later."
             break
-          case "Email rate limit exceeded":
-            errorMessage = "Too many requests. Please try again later."
-            break
           default:
-            errorMessage = error.message
+            errorMessage = result.error
         }
-      } else if (error instanceof Error) {
-        errorMessage = error.message
+        setError(errorMessage)
+      } else {
+        router.push("/dashboard")
       }
-      setError(errorMessage)
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "An error occurred")
     } finally {
       setIsLoading(false)
     }
